@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PC Sleep Control</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .container {
+            text-align: center;
+            background: white;
+            padding: 60px 80px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 40px;
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .sleep-button {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            border: none;
+            font-size: 24px;
+            font-weight: 700;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .sleep-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .sleep-button:active {
+            transform: scale(0.95);
+        }
+
+        .sleep-button.loading {
+            pointer-events: none;
+            opacity: 0.7;
+        }
+
+        .message {
+            margin-top: 30px;
+            font-size: 16px;
+            min-height: 24px;
+            color: #666;
+        }
+
+        .message.success {
+            color: #4caf50;
+        }
+
+        .message.error {
+            color: #f44336;
+        }
+
+        .status-dot {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-left: 10px;
+        }
+        .status-online { background-color: #4caf50; box-shadow: 0 0 10px #4caf50; }
+        .status-offline { background-color: #f44336; box-shadow: 0 0 10px #f44336;}
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PC Sleep Control <span id="statusIndicator" class="status-dot status-offline" title="Checking status..."></span></h1>
+        <button id="sleepBtn" class="sleep-button">
+            SLEEP
+        </button>
+        <div id="message" class="message"></div>
+        
+        <div style="margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
+            <a href="/browse" style="display: inline-block; padding: 12px 24px; background: #f0f2f5; border-radius: 50px; text-decoration: none; color: #555; font-weight: 600; transition: background 0.3s; margin-right: 10px;">
+                📂 View Files
+            </a>
+            <a href="/screen" style="display: inline-block; padding: 12px 24px; background: #e3f2fd; border-radius: 50px; text-decoration: none; color: #0d47a1; font-weight: 600; transition: background 0.3s;">
+                🖥️ Share Screen
+            </a>
+        </div>
+    </div>
+
+    <script>
+        const sleepBtn = document.getElementById('sleepBtn');
+        const messageDiv = document.getElementById('message');
+        const statusIndicator = document.getElementById('statusIndicator');
+
+        // Health check function
+        async function checkHealth() {
+            try {
+                // Add a timestamp to prevent caching
+                // Set a short timeout so we don't hang if server is gone
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2000);
+                
+                const response = await fetch('/health?t=' + new Date().getTime(), { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    setOnlineState();
+                } else {
+                    setOfflineState();
+                }
+            } catch (e) {
+                setOfflineState();
+            }
+        }
+
+        function setOnlineState() {
+            if (statusIndicator.className !== 'status-dot status-online') {
+                statusIndicator.className = 'status-dot status-online';
+                statusIndicator.title = 'PC is Online';
+            }
+            
+            // Only update button if it's currently disabled or showing 'ASLEEP'
+            // We don't want to interrupt the 'SLEEPING...' animation immediately if it's still processing,
+            // But if we are confirmed online, we should essentially be ready to sleep again.
+            if (sleepBtn.textContent === 'ALREADY ASLEEP' || sleepBtn.textContent === 'Offline') {
+                 sleepBtn.disabled = false;
+                 sleepBtn.classList.remove('loading');
+                 sleepBtn.textContent = 'SLEEP';
+                 messageDiv.textContent = 'PC is Online';
+                 messageDiv.className = 'message success';
+            } else if (sleepBtn.textContent === 'SLEEP' && messageDiv.textContent.includes('going to sleep')) {
+                 // Fix bug: if PC woke up or never fully went offline (missed the offline window),
+                 // clear the stale "going to sleep" message.
+                 messageDiv.textContent = 'PC is Online';
+                 messageDiv.className = 'message success';
+            }
+        }
+
+        function setOfflineState() {
+            if (statusIndicator.className !== 'status-dot status-offline') {
+                statusIndicator.className = 'status-dot status-offline';
+                statusIndicator.title = 'PC is Offline';
+            }
+
+            // Always force button to offline state if check fails
+            if (sleepBtn.textContent !== 'ALREADY ASLEEP') {
+                sleepBtn.disabled = true;
+                sleepBtn.classList.add('loading'); // Use loading style for dimming
+                sleepBtn.textContent = 'ALREADY ASLEEP';
+                messageDiv.textContent = 'PC is Offline / Asleep';
+                messageDiv.className = 'message';
+            }
+        }
+
+        // Check health every 1 second
+        setInterval(checkHealth, 1000);
+        checkHealth(); // Initial check
+
+
+        sleepBtn.addEventListener('click', async () => {
+            sleepBtn.classList.add('loading');
+            sleepBtn.textContent = 'SLEEPING...';
+            messageDiv.textContent = 'Putting PC to sleep...';
+            messageDiv.className = 'message';
+
+            try {
+                const response = await fetch('/sleep', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    messageDiv.textContent = data.message;
+                    messageDiv.classList.add('success');
+                } else {
+                    messageDiv.textContent = 'Error: ' + data.message;
+                    messageDiv.classList.add('error');
+                }
+            } catch (error) {
+                // Network errors often mean the PC went to sleep before responding, which is good!
+                console.log('Error during sleep request:', error);
+            } finally {
+                // We rely on the health check to update the UI state
+                // But we can reset if it hasn't gone offline yet after a few seconds
+                setTimeout(() => {
+                   if (sleepBtn.textContent === 'SLEEPING...') {
+                       sleepBtn.classList.remove('loading');
+                       sleepBtn.textContent = 'SLEEP';
+                   }
+                }, 5000);
+            }
+        });
+    </script>
+</body>
+</html>
